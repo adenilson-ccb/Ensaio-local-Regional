@@ -1,3 +1,5 @@
+import re
+import unicodedata
 import streamlit as st
 from datetime import date
 
@@ -91,75 +93,175 @@ def checar_login():
 
 # ---------------- Geração de PDF do resumo ----------------
 
-def gerar_pdf(contexto: dict) -> bytes:
-    from fpdf import FPDF
+def _sem_acento(texto: str) -> str:
+    return unicodedata.normalize("NFD", texto).encode("ascii", "ignore").decode().lower()
 
-    pdf = FPDF()
-    pdf.add_page()
-    pdf.set_font("Helvetica", "B", 16)
-    pdf.cell(0, 10, "Resumo do Ensaio", ln=True)
-    pdf.set_font("Helvetica", "", 11)
-    pdf.cell(0, 8, f"Data: {contexto['data_str']} ({contexto['dia_semana']})", ln=True)
-    pdf.cell(0, 8, f"Tipo: {contexto['tipo_ensaio']}", ln=True)
-    pdf.ln(4)
 
-    pdf.set_font("Helvetica", "B", 12)
-    pdf.cell(0, 8, "Encarregados", ln=True)
-    pdf.set_font("Helvetica", "", 11)
-    for nome, localidade in contexto["encarregados"]:
-        if nome or localidade:
-            pdf.cell(0, 7, f"- {nome or '-'} / {localidade or '-'}", ln=True)
-    pdf.ln(4)
-
-    pdf.set_font("Helvetica", "B", 12)
-    pdf.cell(0, 8, "Resumo", ln=True)
-    pdf.set_font("Helvetica", "", 11)
-    pdf.cell(0, 7, f"Quant. de Músicos: {contexto['total_musicos']}", ln=True)
-    pdf.cell(0, 7, f"Quant. Organistas: {contexto['organistas']}", ln=True)
-    pdf.cell(0, 7, f"Total: {contexto['total_musicos'] + contexto['organistas']}", ln=True)
-    pdf.cell(0, 7, f"Total de Irmandade: {contexto['irmaos'] + contexto['irmas']}", ln=True)
-    pdf.cell(0, 7, f"Total Geral (Músicos + Organistas + Irmandade): {contexto['total_geral']}", ln=True)
-    pdf.ln(4)
-
-    if contexto["hinos"]:
-        pdf.set_font("Helvetica", "B", 12)
-        pdf.cell(0, 8, "Hinos ensaiados", ln=True)
-        pdf.set_font("Helvetica", "", 11)
-        for linha in contexto["hinos"].splitlines():
-            pdf.multi_cell(0, 7, linha)
-
-    return bytes(pdf.output())
+def formatar_hinos(texto: str) -> str:
+    """Se forem só números (separados por vírgula, espaço ou hífen), mostra 62-278-391...
+    Caso contrário, mantém o texto como foi digitado."""
+    texto = (texto or "").strip()
+    if not texto:
+        return ""
+    partes = [p for p in re.split(r"[,;\s\-]+", texto) if p]
+    if partes and all(p.isdigit() for p in partes):
+        return "-".join(partes)
+    return texto
 
 
 def contexto_pdf_do_registro(e: dict) -> dict:
-    """Monta o contexto do PDF a partir de um registro já salvo (usado no Histórico)."""
+    """Monta o contexto do PDF a partir de um registro (salvo ou vindo do formulário)."""
     data_str = e.get("data") or ""
     try:
         data_str = date.fromisoformat(e.get("data")).strftime("%d/%m/%Y")
     except (TypeError, ValueError):
         pass
 
+    def qtd(campo):
+        return int(e.get(campo) or 0)
+
     encarregados = [
         (e.get(f"nome_encarregado_{i}") or "", e.get(f"localidade_{i}") or "")
         for i in range(1, 4)
     ]
-    total_musicos = sum(e.get(campo, 0) or 0 for campo in CORDAS + MADEIRAS + METAIS) + (e.get("acordeon") or 0)
-    organistas = e.get("organistas") or 0
-    irmaos = e.get("irmaos") or 0
-    irmas = e.get("irmas") or 0
+
+    total_cordas = sum(qtd(c) for c in CORDAS)
+    total_madeiras = sum(qtd(c) for c in MADEIRAS)
+    total_metais = sum(qtd(c) for c in METAIS)
+    acordeon = qtd("acordeon")
+    total_musicos = total_cordas + total_madeiras + total_metais + acordeon
+
+    instrumentos = [(LABELS[c], qtd(c)) for c in CORDAS + MADEIRAS + METAIS if qtd(c) > 0]
+    if acordeon:
+        instrumentos.append(("Harmônico (Acordeon)", acordeon))
+    instrumentos.sort(key=lambda item: _sem_acento(item[0]))
+
+    def pct(valor):
+        return valor / total_musicos if total_musicos else 0
+
+    composicao = [
+        ("Cordas", total_cordas, pct(total_cordas), META_CORDAS),
+        ("Madeiras", total_madeiras, pct(total_madeiras), META_MADEIRAS),
+        ("Metais", total_metais, pct(total_metais), META_METAIS),
+    ]
+
+    organistas = qtd("organistas")
+    irmaos = qtd("irmaos")
+    irmas = qtd("irmas")
 
     return {
         "data_str": data_str,
         "dia_semana": e.get("dia_semana") or "",
         "tipo_ensaio": e.get("tipo_ensaio") or "",
         "encarregados": encarregados,
+        "instrumentos": instrumentos,
+        "composicao": composicao,
         "total_musicos": total_musicos,
         "organistas": organistas,
         "irmaos": irmaos,
         "irmas": irmas,
         "total_geral": total_musicos + organistas + irmaos + irmas,
-        "hinos": e.get("hinos_ensaiados") or "",
+        "hinos": formatar_hinos(e.get("hinos_ensaiados")),
     }
+
+
+def gerar_pdf(ctx: dict) -> bytes:
+    from fpdf import FPDF
+    from fpdf.fonts import FontFace
+
+    LARGURA = 120        # largura das tabelas (mm)
+    RECUO = 25           # recuo das tabelas à esquerda (mm)
+    ALTURA_LINHA = 4.2   # altura de cada linha de tabela (mm)
+    PADDING = 0.9
+    cabecalho_estilo = FontFace(emphasis="", fill_color=(240, 240, 240))
+    negrito = FontFace(emphasis="B")
+
+    pdf = FPDF()
+    pdf.set_margins(20, 20, 20)
+    pdf.set_auto_page_break(auto=True, margin=20)
+    pdf.add_page()
+
+    def tabela(titulo, linhas, larguras, cabecalho=None, negrito_em=()):
+        """Título + tabela. Se não couber no resto da página, vai inteira para a próxima."""
+        n_linhas = len(linhas) + (1 if cabecalho else 0)
+        altura = 13 + n_linhas * (ALTURA_LINHA + 2 * PADDING)
+        if pdf.get_y() + altura > pdf.h - pdf.b_margin:
+            pdf.add_page()
+
+        pdf.ln(4)
+        pdf.set_font("Helvetica", "BI", 10.5)
+        pdf.cell(0, 7, titulo, new_x="LMARGIN", new_y="NEXT")
+        pdf.ln(0.5)
+
+        pdf.set_x(pdf.l_margin + RECUO)
+        pdf.set_font("Helvetica", "", 8)
+        with pdf.table(
+            width=LARGURA, col_widths=larguras, align="L", line_height=ALTURA_LINHA,
+            borders_layout="ALL", first_row_as_headings=False, padding=PADDING,
+        ) as t:
+            if cabecalho:
+                r = t.row()
+                for c in cabecalho:
+                    r.cell(c, style=cabecalho_estilo)
+            for i, linha in enumerate(linhas):
+                r = t.row()
+                for c in linha:
+                    r.cell(str(c), style=negrito if i in negrito_em else None)
+
+    # Título
+    pdf.set_font("Helvetica", "B", 15)
+    pdf.cell(0, 10, f"Culto de Jovens - Ensaio {ctx['tipo_ensaio']}".strip(), align="C",
+             new_x="LMARGIN", new_y="NEXT")
+    pdf.ln(5)
+    pdf.set_font("Helvetica", "B", 12)
+    pdf.cell(0, 8, "Ensaio", new_x="LMARGIN", new_y="NEXT")
+
+    # Encarregados
+    enc = [(n or "-", l or "-") for n, l in ctx["encarregados"] if n or l]
+    if enc:
+        tabela("Encarregados", enc, (50, 50), cabecalho=("Nome", "Localidade"))
+
+    # Músicos e Organistas
+    n = len(ctx["instrumentos"])
+    linhas = list(ctx["instrumentos"]) + [
+        ("Sub Total (músicos)", ctx["total_musicos"]),
+        ("Organistas (Órgão)", ctx["organistas"]),
+        ("Sub Total (músicos + organistas)", ctx["total_musicos"] + ctx["organistas"]),
+    ]
+    tabela("Músicos e Organistas", linhas, (72, 28),
+           cabecalho=("Instrumento", "Quantidade"), negrito_em={n, n + 1, n + 2})
+
+    # Composição dos participantes
+    comp = [(nome, qtd, f"{pc:.0%}", f"{meta:.0%}") for nome, qtd, pc, meta in ctx["composicao"]]
+    tabela("Composição dos participantes", comp, (34, 22, 22, 22),
+           cabecalho=("Categoria", "Cadastrados", "% atual", "Meta CCB"))
+
+    # Hinos ensaiados
+    if ctx["hinos"]:
+        pdf.ln(4)
+        pdf.set_font("Helvetica", "BI", 10.5)
+        pdf.cell(0, 7, "Hinos ensaiados", new_x="LMARGIN", new_y="NEXT")
+        pdf.set_font("Helvetica", "", 9)
+        pdf.multi_cell(0, 5.5, ctx["hinos"], new_x="LMARGIN", new_y="NEXT")
+
+    # Irmandade
+    total_irmandade = ctx["irmaos"] + ctx["irmas"]
+    tabela("Irmandade", [
+        ("Irmãos", ctx["irmaos"]),
+        ("Irmãs", ctx["irmas"]),
+        ("Total de Irmandade", total_irmandade),
+    ], (72, 28), negrito_em={2})
+
+    # Resumo
+    tabela("Resumo", [
+        ("Quant. de Músicos", ctx["total_musicos"]),
+        ("Quant. Organistas", ctx["organistas"]),
+        ("Total", ctx["total_musicos"] + ctx["organistas"]),
+        ("Total de Irmandade", total_irmandade),
+        ("TOTAL GERAL", ctx["total_geral"]),
+    ], (72, 28), negrito_em={2, 4})
+
+    return bytes(pdf.output())
 
 
 # ---------------- Formulário reaproveitável (Novo Registro e Edição) ----------------
@@ -302,11 +404,6 @@ def formulario_ensaio(key_prefix: str, valores: dict | None = None):
     with c3:
         cartao_percentual("Metais", CORES["Metais"], pc_metais, META_METAIS)
 
-    visitantes = st.number_input(
-        "Visitantes", min_value=0, step=1,
-        value=int(valores.get("visitantes") or 0), key=f"{key_prefix}_visitantes",
-    )
-
     hinos = st.text_area(
         "Hinos ensaiados", placeholder="Ex: Hino 10 - ...\nHino 25 - ...",
         value=valores.get("hinos_ensaiados") or "", key=f"{key_prefix}_hinos",
@@ -338,22 +435,12 @@ def formulario_ensaio(key_prefix: str, valores: dict | None = None):
         "acordeon": acordeon,
         "organistas": organistas,
         **valores_ministerio,
-        "visitantes": visitantes,
+        # Campo removido da tela; a coluna continua no banco (mantém o valor antigo, se houver).
+        "visitantes": int(valores.get("visitantes") or 0),
         "hinos_ensaiados": hinos,
     }
 
-    contexto_pdf = {
-        "data_str": data_ensaio.strftime("%d/%m/%Y"),
-        "dia_semana": dia_semana,
-        "tipo_ensaio": tipo_ensaio,
-        "encarregados": encarregados,
-        "total_musicos": total_musicos,
-        "organistas": organistas,
-        "irmaos": irmaos,
-        "irmas": irmas,
-        "total_geral": total_geral,
-        "hinos": hinos,
-    }
+    contexto_pdf = contexto_pdf_do_registro(dados)
 
     return dados, contexto_pdf
 
@@ -402,7 +489,7 @@ def tela_historico():
         titulo = f"{e['dia_semana']} — {e['data']}"
         if tipo:
             titulo += f" · {tipo}"
-        titulo += f" · {total_musicos + (e.get('organistas') or 0)} presente(s) · {e.get('visitantes') or 0} visitante(s)"
+        titulo += f" · {total_musicos + (e.get('organistas') or 0)} presente(s)"
 
         with st.expander(titulo):
             for i in range(1, 4):
