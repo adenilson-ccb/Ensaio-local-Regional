@@ -44,7 +44,22 @@ LABELS = {
 
 META_CORDAS, META_MADEIRAS, META_METAIS = 0.50, 0.25, 0.25
 
+CORES = {
+    "Cordas": "#2563EB",    # azul
+    "Madeiras": "#16A34A",  # verde
+    "Metais": "#EA580C",    # laranja
+}
+
 DATA_PADRAO = date(2026, 9, 19)
+
+
+def cabecalho_colorido(titulo: str, cor: str):
+    st.markdown(
+        f"""<div style="background-color:{cor}; padding:10px 16px; border-radius:6px; margin:12px 0 8px 0;">
+        <span style="color:white; font-weight:600; font-size:1.05rem;">{titulo}</span>
+        </div>""",
+        unsafe_allow_html=True,
+    )
 
 
 # ---------------- Login com senha compartilhada ----------------
@@ -137,29 +152,29 @@ def tela_novo_registro():
 
     st.subheader("Músicos")
 
-    with st.expander("Cordas", expanded=False):
-        valores_cordas = {}
-        cols = st.columns(len(CORDAS))
-        for i, campo in enumerate(CORDAS):
-            valores_cordas[campo] = cols[i].number_input(LABELS[campo], min_value=0, step=1, key=campo)
-        total_cordas = sum(valores_cordas.values())
-        st.caption(f"Total cordas: {total_cordas}")
+    cabecalho_colorido("Cordas", CORES["Cordas"])
+    valores_cordas = {}
+    cols = st.columns(len(CORDAS))
+    for i, campo in enumerate(CORDAS):
+        valores_cordas[campo] = cols[i].number_input(LABELS[campo], min_value=0, step=1, key=campo)
+    total_cordas = sum(valores_cordas.values())
+    st.caption(f"Total cordas: {total_cordas}")
 
-    with st.expander("Madeiras", expanded=False):
-        valores_madeiras = {}
-        cols = st.columns(4)
-        for i, campo in enumerate(MADEIRAS):
-            valores_madeiras[campo] = cols[i % 4].number_input(LABELS[campo], min_value=0, step=1, key=campo)
-        total_madeiras = sum(valores_madeiras.values())
-        st.caption(f"Total madeiras: {total_madeiras}")
+    cabecalho_colorido("Madeiras", CORES["Madeiras"])
+    valores_madeiras = {}
+    cols = st.columns(4)
+    for i, campo in enumerate(MADEIRAS):
+        valores_madeiras[campo] = cols[i % 4].number_input(LABELS[campo], min_value=0, step=1, key=campo)
+    total_madeiras = sum(valores_madeiras.values())
+    st.caption(f"Total madeiras: {total_madeiras}")
 
-    with st.expander("Metais", expanded=False):
-        valores_metais = {}
-        cols = st.columns(4)
-        for i, campo in enumerate(METAIS):
-            valores_metais[campo] = cols[i % 4].number_input(LABELS[campo], min_value=0, step=1, key=campo)
-        total_metais = sum(valores_metais.values())
-        st.caption(f"Total metais: {total_metais}")
+    cabecalho_colorido("Metais", CORES["Metais"])
+    valores_metais = {}
+    cols = st.columns(4)
+    for i, campo in enumerate(METAIS):
+        valores_metais[campo] = cols[i % 4].number_input(LABELS[campo], min_value=0, step=1, key=campo)
+    total_metais = sum(valores_metais.values())
+    st.caption(f"Total metais: {total_metais}")
 
     with st.expander("Harmônico", expanded=False):
         acordeon = st.number_input("Harmônico (Acordeon)", min_value=0, step=1, key="acordeon")
@@ -186,13 +201,27 @@ def tela_novo_registro():
 
     st.subheader("Composição dos participantes")
     st.caption("Referência sugerida pela CCB: 50% Cordas, 25% Madeiras, 25% Metais.")
-    c1, c2, c3 = st.columns(3)
     pc_cordas = (total_cordas / total_musicos) if total_musicos else 0
     pc_madeiras = (total_madeiras / total_musicos) if total_musicos else 0
     pc_metais = (total_metais / total_musicos) if total_musicos else 0
-    c1.metric("Cordas", f"{pc_cordas:.0%}", help=f"meta: {META_CORDAS:.0%}")
-    c2.metric("Madeiras", f"{pc_madeiras:.0%}", help=f"meta: {META_MADEIRAS:.0%}")
-    c3.metric("Metais", f"{pc_metais:.0%}", help=f"meta: {META_METAIS:.0%}")
+
+    def cartao_percentual(titulo, cor, valor, meta):
+        st.markdown(
+            f"""<div style="border:2px solid {cor}; border-radius:8px; padding:10px 14px; text-align:center;">
+            <div style="color:{cor}; font-weight:600;">{titulo}</div>
+            <div style="font-size:1.6rem; font-weight:700;">{valor:.0%}</div>
+            <div style="font-size:0.8rem; color:#666;">meta: {meta:.0%}</div>
+            </div>""",
+            unsafe_allow_html=True,
+        )
+
+    c1, c2, c3 = st.columns(3)
+    with c1:
+        cartao_percentual("Cordas", CORES["Cordas"], pc_cordas, META_CORDAS)
+    with c2:
+        cartao_percentual("Madeiras", CORES["Madeiras"], pc_madeiras, META_MADEIRAS)
+    with c3:
+        cartao_percentual("Metais", CORES["Metais"], pc_metais, META_METAIS)
 
     visitantes = st.number_input("Visitantes", min_value=0, step=1, key="visitantes")
 
