@@ -1,7 +1,7 @@
 import re
 import unicodedata
 import streamlit as st
-from datetime import date
+from datetime import date, datetime
 
 import db
 
@@ -51,7 +51,46 @@ CORES = {
     "Metais": "#EA580C",    # laranja
 }
 
-DATA_PADRAO = date(2026, 9, 19)
+try:
+    from zoneinfo import ZoneInfo
+    FUSO = ZoneInfo("America/Sao_Paulo")
+except Exception:
+    FUSO = None
+
+
+def hoje() -> date:
+    """Data de hoje no horário de Brasília (o servidor do Streamlit roda em UTC)."""
+    return datetime.now(FUSO).date()
+
+
+def terceira_sexta(ano: int, mes: int) -> date:
+    """Data da 3ª sexta-feira do mês (dia do ensaio)."""
+    primeiro = date(ano, mes, 1)
+    dias_ate_sexta = (4 - primeiro.weekday()) % 7   # sexta = 4
+    return date(ano, mes, 1 + dias_ate_sexta + 14)
+
+
+def proximo_ensaio(referencia: date) -> date:
+    """Próximo ensaio a partir de uma data (se hoje for o dia, conta como hoje)."""
+    deste_mes = terceira_sexta(referencia.year, referencia.month)
+    if referencia <= deste_mes:
+        return deste_mes
+    if referencia.month == 12:
+        return terceira_sexta(referencia.year + 1, 1)
+    return terceira_sexta(referencia.year, referencia.month + 1)
+
+
+def aviso_proximo_ensaio():
+    hoje_ = hoje()
+    prox = proximo_ensaio(hoje_)
+    dias = (prox - hoje_).days
+    if dias == 0:
+        quando = "é hoje!"
+    elif dias == 1:
+        quando = "é amanhã"
+    else:
+        quando = f"faltam {dias} dias"
+    st.info(f"📅 **Próximo ensaio:** {DIAS_SEMANA[prox.weekday()]}, {prox.strftime('%d/%m/%Y')} ({quando})")
 
 
 def cabecalho_colorido(titulo: str, cor: str):
@@ -280,7 +319,7 @@ def formulario_ensaio(key_prefix: str, valores: dict | None = None):
         key=f"{key_prefix}_tipo_ensaio",
     )
 
-    data_inicial = DATA_PADRAO
+    data_inicial = terceira_sexta(hoje().year, hoje().month)
     if valores.get("data"):
         try:
             data_inicial = date.fromisoformat(valores["data"])
@@ -296,7 +335,10 @@ def formulario_ensaio(key_prefix: str, valores: dict | None = None):
     dia_semana = DIAS_SEMANA[data_ensaio.weekday()]
     st.caption(f"Dia da semana: {dia_semana}")
 
-    fora_padrao = dia_semana not in ("Quinta-feira", "Domingo", "Segunda-feira")
+    fora_padrao = (
+        data_ensaio != terceira_sexta(data_ensaio.year, data_ensaio.month)
+        and dia_semana not in ("Quinta-feira", "Domingo", "Segunda-feira")
+    )
     if fora_padrao:
         st.info("Esse dia está fora do padrão habitual de ensaios — será marcado como tal.")
 
@@ -565,6 +607,8 @@ def main():
         return
 
     db.init_db()
+
+    aviso_proximo_ensaio()
 
     aba1, aba2 = st.tabs(["📝 Novo Registro", "📜 Histórico"])
     with aba1:
