@@ -259,7 +259,7 @@ def tela_novo_registro():
 
     b1, b2 = st.columns(2)
     if b1.button("Salvar Ensaio", type="primary", use_container_width=True):
-        db.salvar_culto(dados, [])
+        db.salvar_ensaio(dados, [])
         st.success("Registro salvo com sucesso!")
         st.rerun()
 
@@ -290,32 +290,32 @@ def tela_historico():
     st.header("Histórico de Ensaios")
     mostrar_fora_padrao = st.checkbox("Mostrar também datas fora do padrão", value=True)
 
-    cultos = db.listar_cultos(limite=50)
+    ensaios = db.listar_ensaios(limite=50)
     if not mostrar_fora_padrao:
-        cultos = [c for c in cultos if not c.get("fora_do_padrao")]
+        ensaios = [e for e in ensaios if not e.get("fora_do_padrao")]
 
-    if not cultos:
+    if not ensaios:
         st.info("Nenhum registro ainda.")
         return
 
-    for c in cultos:
-        total_musicos = sum(c.get(campo, 0) or 0 for campo in CORDAS + MADEIRAS + METAIS) + (c.get("acordeon") or 0)
-        tipo = c.get("tipo_ensaio") or ""
-        titulo = f"{c['dia_semana']} — {c['data']}"
+    for e in ensaios:
+        total_musicos = sum(e.get(campo, 0) or 0 for campo in CORDAS + MADEIRAS + METAIS) + (e.get("acordeon") or 0)
+        tipo = e.get("tipo_ensaio") or ""
+        titulo = f"{e['dia_semana']} — {e['data']}"
         if tipo:
             titulo += f" · {tipo}"
-        titulo += f" · {total_musicos + (c.get('organistas') or 0)} presente(s) · {c.get('visitantes') or 0} visitante(s)"
+        titulo += f" · {total_musicos + (e.get('organistas') or 0)} presente(s) · {e.get('visitantes') or 0} visitante(s)"
         with st.expander(titulo):
             for i in range(1, 4):
-                nome = c.get(f"nome_encarregado_{i}")
-                localidade = c.get(f"localidade_{i}")
+                nome = e.get(f"nome_encarregado_{i}")
+                localidade = e.get(f"localidade_{i}")
                 if nome or localidade:
                     st.write(f"**Encarregado {i}:** {nome or '-'} · **Localidade:** {localidade or '-'}")
-            st.write(f"**Irmãos:** {c.get('irmaos')} · **Irmãs:** {c.get('irmas')}")
-            st.write(f"**Músicos:** {total_musicos} · **Organistas:** {c.get('organistas')}")
-            if c.get("hinos_ensaiados"):
+            st.write(f"**Irmãos:** {e.get('irmaos')} · **Irmãs:** {e.get('irmas')}")
+            st.write(f"**Músicos:** {total_musicos} · **Organistas:** {e.get('organistas')}")
+            if e.get("hinos_ensaiados"):
                 st.write("**Hinos ensaiados:**")
-                st.text(c["hinos_ensaiados"])
+                st.text(e["hinos_ensaiados"])
 
 
 # ---------------- Main ----------------
