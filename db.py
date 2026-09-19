@@ -171,6 +171,20 @@ def atualizar_ensaio(ensaio_id: int, dados: dict):
     )
 
 
+def excluir_ensaio(ensaio_id: int):
+    """Exclui um registro de Ensaio (usado no botão Excluir do Histórico).
+
+    Apaga primeiro as presenças ligadas a ele, para não sobrar dado órfão
+    (ou bloquear a exclusão, se o banco exigir a chave estrangeira).
+    """
+    try:
+        _execute("DELETE FROM presencas WHERE ensaio_id = ?", [ensaio_id])
+    except RuntimeError:
+        # Se a tabela de presenças não existir neste banco, segue para apagar o ensaio.
+        pass
+    _execute("DELETE FROM ensaios WHERE id = ?", [ensaio_id])
+
+
 def listar_ensaios(limite: int = 20):
     result = _execute(
         "SELECT * FROM ensaios ORDER BY data DESC, id DESC LIMIT ?", [limite]
