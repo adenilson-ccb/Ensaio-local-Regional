@@ -1,5 +1,6 @@
 import streamlit as st
 from datetime import date
+from io import BytesIO
 
 import db
 
@@ -10,21 +11,35 @@ DIAS_SEMANA = [
     "Sexta-feira", "Sábado", "Domingo",
 ]
 
-CORDAS = ["violino", "viola", "violoncelo", "contrabaixo"]
-MADEIRAS = ["flauta", "clarinete", "sax_soprano", "sax_alto", "sax_tenor", "fagote", "oboe"]
+CORDAS = ["violino", "viola", "violoncelo"]
+MADEIRAS = [
+    "flauta", "clarinete", "clarone", "sax_soprano", "sax_alto", "sax_tenor",
+    "sax_baritono", "oboe", "oboe_damore", "corne_ingles", "clarinete_alto",
+]
 METAIS = [
     "trompete", "trombone", "flugelhorn", "euphonium", "tuba",
     "trompete_cornet", "trompa", "trombonito", "baritono_pisto", "sax_horn",
 ]
+MINISTERIO = [
+    "anciaes", "diaconos", "coop_of_ministerial", "coop_jovens_menores",
+    "enc_regionais", "enc_locais", "examinadoras",
+]
 
 LABELS = {
-    "violino": "Violino", "viola": "Viola", "violoncelo": "Violoncelo", "contrabaixo": "Contrabaixo",
-    "flauta": "Flauta", "clarinete": "Clarinete", "sax_soprano": "Sax Soprano",
-    "sax_alto": "Sax Alto", "sax_tenor": "Sax Tenor", "fagote": "Fagote", "oboe": "Oboé",
+    "violino": "Violino", "viola": "Viola", "violoncelo": "Violoncelo",
+    "flauta": "Flauta", "clarinete": "Clarinete", "clarone": "Clarone",
+    "sax_soprano": "Sax Soprano", "sax_alto": "Sax Alto", "sax_tenor": "Sax Tenor",
+    "sax_baritono": "Sax Barítono", "oboe": "Oboé", "oboe_damore": "Oboé D'Amore",
+    "corne_ingles": "Corne Inglês", "clarinete_alto": "Clarinete Alto",
     "trompete": "Trompete", "trombone": "Trombone", "flugelhorn": "Flugelhorn",
     "euphonium": "Euphonium", "tuba": "Tuba", "trompete_cornet": "Trompete Cornet",
     "trompa": "Trompa", "trombonito": "Trombonito", "baritono_pisto": "Barítono pisto",
     "sax_horn": "Sax Horn",
+    "anciaes": "Anciães", "diaconos": "Diáconos",
+    "coop_of_ministerial": "Coop. do Of. Ministerial",
+    "coop_jovens_menores": "Coop. de Jovens e Menores",
+    "enc_regionais": "Enc. Regionais", "enc_locais": "Enc. Locais",
+    "examinadoras": "Examinadoras",
 }
 
 META_CORDAS, META_MADEIRAS, META_METAIS = 0.50, 0.25, 0.25
@@ -49,6 +64,48 @@ def checar_login():
     return False
 
 
+# ---------------- Geração de PDF do resumo ----------------
+
+def gerar_pdf(contexto: dict) -> bytes:
+    from fpdf import FPDF
+
+    pdf = FPDF()
+    pdf.add_page()
+    pdf.set_font("Helvetica", "B", 16)
+    pdf.cell(0, 10, "Resumo do Ensaio", ln=True)
+    pdf.set_font("Helvetica", "", 11)
+    pdf.cell(0, 8, f"Data: {contexto['data_str']} ({contexto['dia_semana']})", ln=True)
+    pdf.cell(0, 8, f"Tipo: {contexto['tipo_ensaio']}", ln=True)
+    pdf.ln(4)
+
+    pdf.set_font("Helvetica", "B", 12)
+    pdf.cell(0, 8, "Encarregados", ln=True)
+    pdf.set_font("Helvetica", "", 11)
+    for nome, localidade in contexto["encarregados"]:
+        if nome or localidade:
+            pdf.cell(0, 7, f"- {nome or '-'} / {localidade or '-'}", ln=True)
+    pdf.ln(4)
+
+    pdf.set_font("Helvetica", "B", 12)
+    pdf.cell(0, 8, "Resumo", ln=True)
+    pdf.set_font("Helvetica", "", 11)
+    pdf.cell(0, 7, f"Quant. de Músicos: {contexto['total_musicos']}", ln=True)
+    pdf.cell(0, 7, f"Quant. Organistas: {contexto['organistas']}", ln=True)
+    pdf.cell(0, 7, f"Total: {contexto['total_musicos'] + contexto['organistas']}", ln=True)
+    pdf.cell(0, 7, f"Total de Irmandade: {contexto['irmaos'] + contexto['irmas']}", ln=True)
+    pdf.cell(0, 7, f"Total Geral (Músicos + Organistas + Irmandade): {contexto['total_geral']}", ln=True)
+    pdf.ln(4)
+
+    if contexto["hinos"]:
+        pdf.set_font("Helvetica", "B", 12)
+        pdf.cell(0, 8, "Hinos ensaiados", ln=True)
+        pdf.set_font("Helvetica", "", 11)
+        for linha in contexto["hinos"].splitlines():
+            pdf.multi_cell(0, 7, linha)
+
+    return bytes(pdf.output())
+
+
 # ---------------- Tela: Novo Registro ----------------
 
 def tela_novo_registro():
@@ -69,13 +126,16 @@ def tela_novo_registro():
     if fora_padrao:
         st.info("Esse dia está fora do padrão habitual de ensaios — será marcado como tal.")
 
-    st.subheader("Irmandade")
-    col1, col2 = st.columns(2)
-    irmaos = col1.number_input("Irmãos", min_value=0, step=1, key="irmaos")
-    irmas = col2.number_input("Irmãs", min_value=0, step=1, key="irmas")
-    st.caption(f"Total de Irmandade: {irmaos + irmas}")
+    st.subheader("Encarregados")
+    st.caption("Quem vai reger a localidade de cada um.")
+    encarregados = []
+    for i in range(1, 4):
+        col_a, col_b = st.columns(2)
+        nome = col_a.text_input(f"Nome {i} — Nome do encarregado", key=f"nome_encarregado_{i}")
+        localidade = col_b.text_input(f"Localidade {i} — Localidade", key=f"localidade_{i}")
+        encarregados.append((nome, localidade))
 
-    st.subheader("Composição dos participantes")
+    st.subheader("Músicos")
 
     with st.expander("Cordas", expanded=False):
         valores_cordas = {}
@@ -87,9 +147,9 @@ def tela_novo_registro():
 
     with st.expander("Madeiras", expanded=False):
         valores_madeiras = {}
-        cols = st.columns(len(MADEIRAS))
+        cols = st.columns(4)
         for i, campo in enumerate(MADEIRAS):
-            valores_madeiras[campo] = cols[i].number_input(LABELS[campo], min_value=0, step=1, key=campo)
+            valores_madeiras[campo] = cols[i % 4].number_input(LABELS[campo], min_value=0, step=1, key=campo)
         total_madeiras = sum(valores_madeiras.values())
         st.caption(f"Total madeiras: {total_madeiras}")
 
@@ -101,23 +161,42 @@ def tela_novo_registro():
         total_metais = sum(valores_metais.values())
         st.caption(f"Total metais: {total_metais}")
 
-    acordeon = st.number_input("Harmônico (Acordeon)", min_value=0, step=1, key="acordeon")
+    with st.expander("Harmônico", expanded=False):
+        acordeon = st.number_input("Harmônico (Acordeon)", min_value=0, step=1, key="acordeon")
+        st.caption(f"Total harmônico: {acordeon}")
+
+    organistas = st.number_input("Organistas", min_value=0, step=1, key="organistas")
 
     total_musicos = total_cordas + total_madeiras + total_metais + acordeon
 
-    st.subheader("Composição dos participantes — percentuais")
+    st.subheader("Ministério")
+    st.caption("Não entra na soma de Total Geral — fica só para conferência.")
+    valores_ministerio = {}
+    cols = st.columns(4)
+    for i, campo in enumerate(MINISTERIO):
+        valores_ministerio[campo] = cols[i % 4].number_input(LABELS[campo], min_value=0, step=1, key=campo)
+    total_ministerio = sum(valores_ministerio.values())
+    st.caption(f"Total Ministério: {total_ministerio}")
+
+    st.subheader("Irmandade")
+    col1, col2 = st.columns(2)
+    irmaos = col1.number_input("Irmãos", min_value=0, step=1, key="irmaos")
+    irmas = col2.number_input("Irmãs", min_value=0, step=1, key="irmas")
+    st.caption(f"Total de Irmandade: {irmaos + irmas}")
+
+    st.subheader("Composição dos participantes")
+    st.caption("Referência sugerida pela CCB: 50% Cordas, 25% Madeiras, 25% Metais.")
     c1, c2, c3 = st.columns(3)
     pc_cordas = (total_cordas / total_musicos) if total_musicos else 0
     pc_madeiras = (total_madeiras / total_musicos) if total_musicos else 0
     pc_metais = (total_metais / total_musicos) if total_musicos else 0
-    c1.metric("Cordas", f"{pc_cordas:.0%}", help=f"Meta {META_CORDAS:.0%}")
-    c2.metric("Madeiras", f"{pc_madeiras:.0%}", help=f"Meta {META_MADEIRAS:.0%}")
-    c3.metric("Metais", f"{pc_metais:.0%}", help=f"Meta {META_METAIS:.0%}")
+    c1.metric("Cordas", f"{pc_cordas:.0%}", help=f"meta: {META_CORDAS:.0%}")
+    c2.metric("Madeiras", f"{pc_madeiras:.0%}", help=f"meta: {META_MADEIRAS:.0%}")
+    c3.metric("Metais", f"{pc_metais:.0%}", help=f"meta: {META_METAIS:.0%}")
 
-    organistas = st.number_input("Quantidade de Organistas", min_value=0, step=1, key="organistas")
     visitantes = st.number_input("Visitantes", min_value=0, step=1, key="visitantes")
 
-    hinos = st.text_area("Hinos ensaiados", placeholder="Ex: Hino 10 - ...\nHino 25 - ...")
+    hinos = st.text_area("Hinos ensaiados", placeholder="Ex: Hino 10 - ...\nHino 25 - ...", key="hinos")
 
     st.subheader("Resumo")
     r1, r2, r3 = st.columns(3)
@@ -129,25 +208,51 @@ def tela_novo_registro():
     st.metric("Total Geral (Músicos + Organistas + Irmandade)", total_geral)
     st.caption("O Ministério não entra nessa soma — fica só para conferência.")
 
-    if st.button("💾 Salvar registro", type="primary"):
-        dados = {
-            "data": data_ensaio.isoformat(),
-            "dia_semana": dia_semana,
-            "tipo_ensaio": tipo_ensaio,
-            "fora_do_padrao": 1 if fora_padrao else 0,
-            "irmaos": irmaos,
-            "irmas": irmas,
-            **valores_cordas,
-            **valores_madeiras,
-            **valores_metais,
-            "acordeon": acordeon,
-            "organistas": organistas,
-            "visitantes": visitantes,
-            "hinos_ensaiados": hinos,
-        }
+    dados = {
+        "data": data_ensaio.isoformat(),
+        "dia_semana": dia_semana,
+        "tipo_ensaio": tipo_ensaio,
+        "nome_encarregado_1": encarregados[0][0], "localidade_1": encarregados[0][1],
+        "nome_encarregado_2": encarregados[1][0], "localidade_2": encarregados[1][1],
+        "nome_encarregado_3": encarregados[2][0], "localidade_3": encarregados[2][1],
+        "fora_do_padrao": 1 if fora_padrao else 0,
+        "irmaos": irmaos,
+        "irmas": irmas,
+        **valores_cordas,
+        **valores_madeiras,
+        **valores_metais,
+        "acordeon": acordeon,
+        "organistas": organistas,
+        **valores_ministerio,
+        "visitantes": visitantes,
+        "hinos_ensaiados": hinos,
+    }
+
+    b1, b2 = st.columns(2)
+    if b1.button("Salvar Ensaio", type="primary", use_container_width=True):
         db.salvar_culto(dados, [])
         st.success("Registro salvo com sucesso!")
         st.rerun()
+
+    pdf_bytes = gerar_pdf({
+        "data_str": data_ensaio.strftime("%d/%m/%Y"),
+        "dia_semana": dia_semana,
+        "tipo_ensaio": tipo_ensaio,
+        "encarregados": encarregados,
+        "total_musicos": total_musicos,
+        "organistas": organistas,
+        "irmaos": irmaos,
+        "irmas": irmas,
+        "total_geral": total_geral,
+        "hinos": hinos,
+    })
+    b2.download_button(
+        "Salvar em PDF",
+        data=pdf_bytes,
+        file_name=f"ensaio_{data_ensaio.isoformat()}.pdf",
+        mime="application/pdf",
+        use_container_width=True,
+    )
 
 
 # ---------------- Tela: Histórico ----------------
@@ -172,6 +277,11 @@ def tela_historico():
             titulo += f" · {tipo}"
         titulo += f" · {total_musicos + (c.get('organistas') or 0)} presente(s) · {c.get('visitantes') or 0} visitante(s)"
         with st.expander(titulo):
+            for i in range(1, 4):
+                nome = c.get(f"nome_encarregado_{i}")
+                localidade = c.get(f"localidade_{i}")
+                if nome or localidade:
+                    st.write(f"**Encarregado {i}:** {nome or '-'} · **Localidade:** {localidade or '-'}")
             st.write(f"**Irmãos:** {c.get('irmaos')} · **Irmãs:** {c.get('irmas')}")
             st.write(f"**Músicos:** {total_musicos} · **Organistas:** {c.get('organistas')}")
             if c.get("hinos_ensaiados"):
