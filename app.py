@@ -473,6 +473,11 @@ def tela_novo_registro():
 
 def tela_historico():
     st.header("Histórico de Ensaios")
+
+    aviso = st.session_state.pop("aviso_historico", None)
+    if aviso:
+        st.success(aviso)
+
     mostrar_fora_padrao = st.checkbox("Mostrar também datas fora do padrão", value=True)
 
     ensaios = db.listar_ensaios(limite=50)
@@ -505,7 +510,7 @@ def tela_historico():
 
             st.divider()
 
-            col_pdf, col_editar = st.columns(2)
+            col_pdf, col_editar, col_excluir = st.columns(3)
 
             pdf_bytes = gerar_pdf(contexto_pdf_do_registro(e))
             col_pdf.download_button(
@@ -522,6 +527,24 @@ def tela_historico():
             if col_editar.button(rotulo_editar, use_container_width=True, key=f"btn_editar_{e['id']}"):
                 st.session_state[editando_key] = not st.session_state.get(editando_key, False)
                 st.rerun()
+
+            excluindo_key = f"excluindo_{e['id']}"
+            if col_excluir.button("🗑️ Excluir", use_container_width=True, key=f"btn_excluir_{e['id']}"):
+                st.session_state[excluindo_key] = True
+                st.rerun()
+
+            if st.session_state.get(excluindo_key):
+                st.warning("Tem certeza que deseja excluir este ensaio? Essa ação não pode ser desfeita.")
+                c_sim, c_nao = st.columns(2)
+                if c_sim.button("Sim, excluir", type="primary", use_container_width=True,
+                                key=f"confirma_excluir_{e['id']}"):
+                    db.excluir_ensaio(e["id"])
+                    st.session_state[excluindo_key] = False
+                    st.session_state["aviso_historico"] = "Registro excluído com sucesso!"
+                    st.rerun()
+                if c_nao.button("Cancelar", use_container_width=True, key=f"cancela_excluir_{e['id']}"):
+                    st.session_state[excluindo_key] = False
+                    st.rerun()
 
             if st.session_state.get(editando_key):
                 st.markdown("---")
