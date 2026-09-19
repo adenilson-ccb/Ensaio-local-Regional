@@ -1,7 +1,7 @@
 """
 Camada de acesso ao banco de dados (Turso), usando a API HTTP oficial
 diretamente (endpoint /v2/pipeline), em vez da biblioteca libsql_client
-que estava causando um KeyError confuso ao esconder o erro real do SQL.
+que causava um KeyError confuso ao esconder o erro real do SQL.
 
 Configuração esperada em .streamlit/secrets.toml:
 
@@ -138,39 +138,39 @@ def cadastrar_musico(nome, instrumento, categoria, nivel):
     )
 
 
-# ---------- Cultos ----------
+# ---------- Ensaios ----------
 
-def salvar_culto(dados: dict, presencas_ids: list[int]):
-    """Salva um novo registro de culto/ensaio e as presenças individuais marcadas."""
+def salvar_ensaio(dados: dict, presencas_ids: list[int]):
+    """Salva um novo registro de Ensaio e as presenças individuais marcadas."""
     colunas = ", ".join(dados.keys())
     placeholders = ", ".join(["?"] * len(dados))
 
     result = _execute(
-        f"INSERT INTO cultos ({colunas}) VALUES ({placeholders})",
+        f"INSERT INTO ensaios ({colunas}) VALUES ({placeholders})",
         list(dados.values()),
     )
-    culto_id = result.get("last_insert_rowid")
-    if culto_id is not None:
-        culto_id = int(culto_id)
+    ensaio_id = result.get("last_insert_rowid")
+    if ensaio_id is not None:
+        ensaio_id = int(ensaio_id)
 
     for musico_id in presencas_ids:
         _execute(
-            "INSERT INTO presencas (culto_id, musico_id, presente) VALUES (?, ?, 1)",
-            [culto_id, musico_id],
+            "INSERT INTO presencas (ensaio_id, musico_id, presente) VALUES (?, ?, 1)",
+            [ensaio_id, musico_id],
         )
 
-    return culto_id
+    return ensaio_id
 
 
-def listar_cultos(limite: int = 20):
+def listar_ensaios(limite: int = 20):
     result = _execute(
-        "SELECT * FROM cultos ORDER BY data DESC, id DESC LIMIT ?", [limite]
+        "SELECT * FROM ensaios ORDER BY data DESC, id DESC LIMIT ?", [limite]
     )
     return _rows_to_dicts(result)
 
 
-def culto_existe_no_dia(data_str: str) -> bool:
-    result = _execute("SELECT COUNT(*) AS total FROM cultos WHERE data = ?", [data_str])
+def ensaio_existe_no_dia(data_str: str) -> bool:
+    result = _execute("SELECT COUNT(*) AS total FROM ensaios WHERE data = ?", [data_str])
     linhas = _rows_to_dicts(result)
     return bool(linhas and linhas[0].get("total"))
 
@@ -180,12 +180,12 @@ def culto_existe_no_dia(data_str: str) -> bool:
 def relatorio_mensal(ano: int, mes: int):
     mes_str = f"{ano:04d}-{mes:02d}"
 
-    result_cultos = _execute(
-        "SELECT id, data FROM cultos WHERE data LIKE ? ORDER BY data",
+    result_ensaios = _execute(
+        "SELECT id, data FROM ensaios WHERE data LIKE ? ORDER BY data",
         [f"{mes_str}-%"],
     )
-    cultos = _rows_to_dicts(result_cultos)
-    total_cultos = len(cultos)
+    ensaios = _rows_to_dicts(result_ensaios)
+    total_ensaios = len(ensaios)
 
     result = _execute(
         """
@@ -193,8 +193,8 @@ def relatorio_mensal(ano: int, mes: int):
                COUNT(p.id) AS presencas
         FROM musicos m
         LEFT JOIN presencas p ON p.musico_id = m.id
-            AND p.culto_id IN (
-                SELECT id FROM cultos WHERE data LIKE ?
+            AND p.ensaio_id IN (
+                SELECT id FROM ensaios WHERE data LIKE ?
             )
         WHERE m.ativo = 1
         GROUP BY m.id
@@ -206,7 +206,7 @@ def relatorio_mensal(ano: int, mes: int):
     for linha in linhas:
         presencas = linha.get("presencas") or 0
         linha["presencas"] = presencas
-        linha["total_cultos"] = total_cultos
-        linha["percentual"] = round(100 * presencas / total_cultos) if total_cultos else 0
+        linha["total_ensaios"] = total_ensaios
+        linha["percentual"] = round(100 * presencas / total_ensaios) if total_ensaios else 0
 
-    return total_cultos, linhas
+    return total_ensaios, linhas
