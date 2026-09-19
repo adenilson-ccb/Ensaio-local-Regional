@@ -15,9 +15,19 @@ from datetime import date
 
 def get_client():
     """Cria uma conexão nova com o banco Turso a cada chamada (padrão recomendado
-    para apps Streamlit, que reexecutam o script a cada interação)."""
+    para apps Streamlit, que reexecutam o script a cada interação).
+
+    Usamos https:// em vez de libsql:// para forçar o protocolo Hrana-sobre-HTTP.
+    A conexão via WebSocket (libsql:// / wss://) costuma falhar em ambientes como
+    o Streamlit Community Cloud (erro WSServerHandshakeError), então convertemos
+    a URL automaticamente aqui.
+    """
+    url = st.secrets["TURSO_DATABASE_URL"]
+    if url.startswith("libsql://"):
+        url = "https://" + url[len("libsql://"):]
+
     return libsql_client.create_client_sync(
-        url=st.secrets["TURSO_DATABASE_URL"],
+        url=url,
         auth_token=st.secrets["TURSO_AUTH_TOKEN"],
     )
 
