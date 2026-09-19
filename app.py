@@ -122,12 +122,22 @@ def checar_login():
     st.title("🎵 Ensaio Local")
     senha = st.text_input("Senha de acesso", type="password")
     if st.button("Entrar"):
-        if senha == st.secrets.get("APP_PASSWORD"):
+        senha_admin = st.secrets.get("ADMIN_PASSWORD")
+        if senha_admin and senha == senha_admin:
             st.session_state["autenticado"] = True
+            st.session_state["admin"] = True
+            st.rerun()
+        elif senha == st.secrets.get("APP_PASSWORD"):
+            st.session_state["autenticado"] = True
+            st.session_state["admin"] = False
             st.rerun()
         else:
             st.error("Senha incorreta.")
     return False
+
+
+def eh_admin() -> bool:
+    return bool(st.session_state.get("admin"))
 
 
 # ---------------- Geração de PDF do resumo ----------------
@@ -552,7 +562,10 @@ def tela_historico():
 
             st.divider()
 
-            col_pdf, col_editar, col_excluir = st.columns(3)
+            if eh_admin():
+                col_pdf, col_editar, col_excluir = st.columns(3)
+            else:
+                col_pdf, col_editar = st.columns(2)
 
             pdf_bytes = gerar_pdf(contexto_pdf_do_registro(e))
             col_pdf.download_button(
@@ -570,23 +583,24 @@ def tela_historico():
                 st.session_state[editando_key] = not st.session_state.get(editando_key, False)
                 st.rerun()
 
-            excluindo_key = f"excluindo_{e['id']}"
-            if col_excluir.button("🗑️ Excluir", use_container_width=True, key=f"btn_excluir_{e['id']}"):
-                st.session_state[excluindo_key] = True
-                st.rerun()
+            if eh_admin():
+                excluindo_key = f"excluindo_{e['id']}"
+                if col_excluir.button("🗑️ Excluir", use_container_width=True, key=f"btn_excluir_{e['id']}"):
+                    st.session_state[excluindo_key] = True
+                    st.rerun()
 
-            if st.session_state.get(excluindo_key):
-                st.warning("Tem certeza que deseja excluir este ensaio? Essa ação não pode ser desfeita.")
-                c_sim, c_nao = st.columns(2)
-                if c_sim.button("Sim, excluir", type="primary", use_container_width=True,
-                                key=f"confirma_excluir_{e['id']}"):
-                    db.excluir_ensaio(e["id"])
-                    st.session_state[excluindo_key] = False
-                    st.session_state["aviso_historico"] = "Registro excluído com sucesso!"
-                    st.rerun()
-                if c_nao.button("Cancelar", use_container_width=True, key=f"cancela_excluir_{e['id']}"):
-                    st.session_state[excluindo_key] = False
-                    st.rerun()
+                if st.session_state.get(excluindo_key):
+                    st.warning("Tem certeza que deseja excluir este ensaio? Essa ação não pode ser desfeita.")
+                    c_sim, c_nao = st.columns(2)
+                    if c_sim.button("Sim, excluir", type="primary", use_container_width=True,
+                                    key=f"confirma_excluir_{e['id']}"):
+                        db.excluir_ensaio(e["id"])
+                        st.session_state[excluindo_key] = False
+                        st.session_state["aviso_historico"] = "Registro excluído com sucesso!"
+                        st.rerun()
+                    if c_nao.button("Cancelar", use_container_width=True, key=f"cancela_excluir_{e['id']}"):
+                        st.session_state[excluindo_key] = False
+                        st.rerun()
 
             if st.session_state.get(editando_key):
                 st.markdown("---")
@@ -609,6 +623,8 @@ def main():
     db.init_db()
 
     aviso_proximo_ensaio()
+    if eh_admin():
+        st.caption("🔑 Logado como administrador")
 
     aba1, aba2 = st.tabs(["📝 Novo Registro", "📜 Histórico"])
     with aba1:
