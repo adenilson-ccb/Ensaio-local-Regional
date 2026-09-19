@@ -1,6 +1,5 @@
 import streamlit as st
 from datetime import date
-import calendar
 
 import db
 
@@ -30,6 +29,8 @@ LABELS = {
 
 META_CORDAS, META_MADEIRAS, META_METAIS = 0.50, 0.25, 0.25
 
+DATA_PADRAO = date(2026, 9, 19)
+
 
 # ---------------- Login com senha compartilhada ----------------
 
@@ -53,22 +54,26 @@ def checar_login():
 def tela_novo_registro():
     st.header("Novo Registro de Ensaio")
 
-    data_culto = st.date_input("Data do culto/ensaio", value=date.today())
-    dia_semana = DIAS_SEMANA[data_culto.weekday()]
+    tipo_ensaio = st.selectbox("Ensaio Local e Regional", ["Local", "Regional"], key="tipo_ensaio")
+
+    data_ensaio = st.date_input(
+        "Data do Ensaio",
+        value=DATA_PADRAO,
+        format="DD/MM/YYYY",
+        key="data_ensaio",
+    )
+    dia_semana = DIAS_SEMANA[data_ensaio.weekday()]
     st.caption(f"Dia da semana: {dia_semana}")
 
     fora_padrao = dia_semana not in ("Quinta-feira", "Domingo", "Segunda-feira")
     if fora_padrao:
-        st.info("Esse dia está fora do padrão habitual de cultos — será marcado como tal.")
+        st.info("Esse dia está fora do padrão habitual de ensaios — será marcado como tal.")
 
     st.subheader("Irmandade")
     col1, col2 = st.columns(2)
     irmaos = col1.number_input("Irmãos", min_value=0, step=1, key="irmaos")
     irmas = col2.number_input("Irmãs", min_value=0, step=1, key="irmas")
     st.caption(f"Total de Irmandade: {irmaos + irmas}")
-
-    musicos_cadastrados = db.listar_musicos()
-    presentes_ids = []
 
     st.subheader("Composição dos participantes")
 
@@ -124,19 +129,11 @@ def tela_novo_registro():
     st.metric("Total Geral (Músicos + Organistas + Irmandade)", total_geral)
     st.caption("O Ministério não entra nessa soma — fica só para conferência.")
 
-    if musicos_cadastrados:
-        st.subheader("Marcar presença individual (opcional, para o relatório por nome)")
-        nomes_presentes = st.multiselect(
-            "Quem esteve presente?",
-            options=[m["id"] for m in musicos_cadastrados],
-            format_func=lambda mid: next(m["nome"] for m in musicos_cadastrados if m["id"] == mid),
-        )
-        presentes_ids = nomes_presentes
-
     if st.button("💾 Salvar registro", type="primary"):
         dados = {
-            "data": data_culto.isoformat(),
+            "data": data_ensaio.isoformat(),
             "dia_semana": dia_semana,
+            "tipo_ensaio": tipo_ensaio,
             "fora_do_padrao": 1 if fora_padrao else 0,
             "irmaos": irmaos,
             "irmas": irmas,
@@ -148,7 +145,7 @@ def tela_novo_registro():
             "visitantes": visitantes,
             "hinos_ensaiados": hinos,
         }
-        db.salvar_culto(dados, presentes_ids)
+        db.salvar_culto(dados, [])
         st.success("Registro salvo com sucesso!")
         st.rerun()
 
@@ -156,7 +153,7 @@ def tela_novo_registro():
 # ---------------- Tela: Histórico ----------------
 
 def tela_historico():
-    st.header("Histórico de Cultos")
+    st.header("Histórico de Ensaios")
     mostrar_fora_padrao = st.checkbox("Mostrar também datas fora do padrão", value=True)
 
     cultos = db.listar_cultos(limite=50)
@@ -169,69 +166,17 @@ def tela_historico():
 
     for c in cultos:
         total_musicos = sum(c.get(campo, 0) or 0 for campo in CORDAS + MADEIRAS + METAIS) + (c.get("acordeon") or 0)
-        with st.expander(f"{c['dia_semana']} — {c['data']} · {total_musicos + (c.get('organistas') or 0)} presente(s) · {c.get('visitantes') or 0} visitante(s)"):
+        tipo = c.get("tipo_ensaio") or ""
+        titulo = f"{c['dia_semana']} — {c['data']}"
+        if tipo:
+            titulo += f" · {tipo}"
+        titulo += f" · {total_musicos + (c.get('organistas') or 0)} presente(s) · {c.get('visitantes') or 0} visitante(s)"
+        with st.expander(titulo):
             st.write(f"**Irmãos:** {c.get('irmaos')} · **Irmãs:** {c.get('irmas')}")
             st.write(f"**Músicos:** {total_musicos} · **Organistas:** {c.get('organistas')}")
             if c.get("hinos_ensaiados"):
                 st.write("**Hinos ensaiados:**")
                 st.text(c["hinos_ensaiados"])
-
-
-# ---------------- Tela: Relatório Mensal ----------------
-
-def tela_relatorio_mensal():
-    st.header("Relatório Mensal")
-    col1, col2 = st.columns(2)
-    ano = col1.number_input("Ano", min_value=2020, max_value=2100, value=date.today().year, step=1)
-    mes_nome = col2.selectbox("Mês", list(calendar.month_name)[1:], index=date.today().month - 1)
-    mes = list(calendar.month_name).index(mes_nome)
-
-    total_cultos, linhas = db.relatorio_mensal(int(ano), mes)
-    st.write(f"**{total_cultos} culto(s) registrado(s) em {mes_nome}/{ano}**")
-
-    if not linhas:
-        st.info("Sem músicos cadastrados ou sem registros no período.")
-        return
-
-    st.subheader("Participação por músico")
-    st.dataframe(
-        [
-            {
-                "Nome": l["nome"],
-                "Instrumento": l["instrumento"],
-                "Categoria": l["categoria"],
-                "Nível": l["nivel"],
-                "Presenças": f"{l['presencas']}/{l['total_cultos']}",
-                "%": f"{l['percentual']}%",
-            }
-            for l in linhas
-        ],
-        use_container_width=True,
-        hide_index=True,
-    )
-
-
-# ---------------- Tela: Cadastro de músicos ----------------
-
-def tela_cadastro():
-    st.header("Cadastro de Músicos e Organistas")
-    with st.form("novo_musico"):
-        nome = st.text_input("Nome")
-        instrumento = st.text_input("Instrumento")
-        categoria = st.selectbox("Categoria", ["Músico", "Organista"])
-        nivel = st.text_input("Nível (ex: RJM, Casado(a))")
-        enviar = st.form_submit_button("Cadastrar")
-        if enviar and nome and instrumento:
-            db.cadastrar_musico(nome, instrumento, categoria, nivel)
-            st.success(f"{nome} cadastrado(a) com sucesso!")
-            st.rerun()
-
-    st.subheader("Cadastrados")
-    musicos = db.listar_musicos()
-    if musicos:
-        st.dataframe(musicos, use_container_width=True, hide_index=True)
-    else:
-        st.info("Nenhum músico cadastrado ainda.")
 
 
 # ---------------- Main ----------------
@@ -242,17 +187,11 @@ def main():
 
     db.init_db()
 
-    aba1, aba2, aba3, aba4 = st.tabs(
-        ["📝 Novo Registro", "📜 Histórico", "📊 Relatório Mensal", "👥 Cadastro"]
-    )
+    aba1, aba2 = st.tabs(["📝 Novo Registro", "📜 Histórico"])
     with aba1:
         tela_novo_registro()
     with aba2:
         tela_historico()
-    with aba3:
-        tela_relatorio_mensal()
-    with aba4:
-        tela_cadastro()
 
 
 if __name__ == "__main__":
