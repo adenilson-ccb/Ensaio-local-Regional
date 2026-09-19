@@ -162,6 +162,15 @@ def salvar_ensaio(dados: dict, presencas_ids: list[int]):
     return ensaio_id
 
 
+def atualizar_ensaio(ensaio_id: int, dados: dict):
+    """Atualiza um registro de Ensaio já existente (usado na edição pelo Histórico)."""
+    set_clause = ", ".join(f"{coluna} = ?" for coluna in dados.keys())
+    _execute(
+        f"UPDATE ensaios SET {set_clause} WHERE id = ?",
+        list(dados.values()) + [ensaio_id],
+    )
+
+
 def listar_ensaios(limite: int = 20):
     result = _execute(
         "SELECT * FROM ensaios ORDER BY data DESC, id DESC LIMIT ?", [limite]
