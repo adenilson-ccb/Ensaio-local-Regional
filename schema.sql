@@ -16,6 +16,7 @@ CREATE TABLE IF NOT EXISTS cultos (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     data TEXT NOT NULL,                  -- formato YYYY-MM-DD
     dia_semana TEXT,                     -- ex: 'Domingo', 'Quinta-feira'
+    tipo_ensaio TEXT,                    -- 'Local' ou 'Regional'
     fora_do_padrao INTEGER NOT NULL DEFAULT 0,  -- 1 se foi criado em dia que não é o padrão
 
     -- Irmandade (sem instrumento)
