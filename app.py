@@ -1,6 +1,5 @@
 import streamlit as st
 from datetime import date
-from io import BytesIO
 
 import db
 
@@ -57,6 +56,17 @@ def cabecalho_colorido(titulo: str, cor: str):
     st.markdown(
         f"""<div style="background-color:{cor}; padding:10px 16px; border-radius:6px; margin:12px 0 8px 0;">
         <span style="color:white; font-weight:600; font-size:1.05rem;">{titulo}</span>
+        </div>""",
+        unsafe_allow_html=True,
+    )
+
+
+def cartao_percentual(titulo, cor, valor, meta):
+    st.markdown(
+        f"""<div style="border:2px solid {cor}; border-radius:8px; padding:10px 14px; text-align:center;">
+        <div style="color:{cor}; font-weight:600;">{titulo}</div>
+        <div style="font-size:1.6rem; font-weight:700;">{valor:.0%}</div>
+        <div style="font-size:0.8rem; color:#666;">meta: {meta:.0%}</div>
         </div>""",
         unsafe_allow_html=True,
     )
@@ -121,18 +131,65 @@ def gerar_pdf(contexto: dict) -> bytes:
     return bytes(pdf.output())
 
 
-# ---------------- Tela: Novo Registro ----------------
+def contexto_pdf_do_registro(e: dict) -> dict:
+    """Monta o contexto do PDF a partir de um registro já salvo (usado no Histórico)."""
+    data_str = e.get("data") or ""
+    try:
+        data_str = date.fromisoformat(e.get("data")).strftime("%d/%m/%Y")
+    except (TypeError, ValueError):
+        pass
 
-def tela_novo_registro():
-    st.header("Novo Registro de Ensaio")
+    encarregados = [
+        (e.get(f"nome_encarregado_{i}") or "", e.get(f"localidade_{i}") or "")
+        for i in range(1, 4)
+    ]
+    total_musicos = sum(e.get(campo, 0) or 0 for campo in CORDAS + MADEIRAS + METAIS) + (e.get("acordeon") or 0)
+    organistas = e.get("organistas") or 0
+    irmaos = e.get("irmaos") or 0
+    irmas = e.get("irmas") or 0
 
-    tipo_ensaio = st.selectbox("Ensaio Local e Regional", ["Local", "Regional"], key="tipo_ensaio")
+    return {
+        "data_str": data_str,
+        "dia_semana": e.get("dia_semana") or "",
+        "tipo_ensaio": e.get("tipo_ensaio") or "",
+        "encarregados": encarregados,
+        "total_musicos": total_musicos,
+        "organistas": organistas,
+        "irmaos": irmaos,
+        "irmas": irmas,
+        "total_geral": total_musicos + organistas + irmaos + irmas,
+        "hinos": e.get("hinos_ensaiados") or "",
+    }
+
+
+# ---------------- Formulário reaproveitável (Novo Registro e Edição) ----------------
+
+def formulario_ensaio(key_prefix: str, valores: dict | None = None):
+    """Desenha todos os campos do Ensaio. Se 'valores' for passado (um registro
+    já salvo), os campos vêm preenchidos com esses valores — usado na edição."""
+    valores = valores or {}
+
+    opcoes_tipo = ["Local", "Regional"]
+    tipo_atual = valores.get("tipo_ensaio")
+    tipo_ensaio = st.selectbox(
+        "Ensaio Local e Regional",
+        opcoes_tipo,
+        index=opcoes_tipo.index(tipo_atual) if tipo_atual in opcoes_tipo else 0,
+        key=f"{key_prefix}_tipo_ensaio",
+    )
+
+    data_inicial = DATA_PADRAO
+    if valores.get("data"):
+        try:
+            data_inicial = date.fromisoformat(valores["data"])
+        except ValueError:
+            pass
 
     data_ensaio = st.date_input(
         "Data do Ensaio",
-        value=DATA_PADRAO,
+        value=data_inicial,
         format="DD/MM/YYYY",
-        key="data_ensaio",
+        key=f"{key_prefix}_data_ensaio",
     )
     dia_semana = DIAS_SEMANA[data_ensaio.weekday()]
     st.caption(f"Dia da semana: {dia_semana}")
@@ -146,8 +203,16 @@ def tela_novo_registro():
     encarregados = []
     for i in range(1, 4):
         col_a, col_b = st.columns(2)
-        nome = col_a.text_input(f"Nome {i} — Nome do encarregado", key=f"nome_encarregado_{i}")
-        localidade = col_b.text_input(f"Localidade {i} — Localidade", key=f"localidade_{i}")
+        nome = col_a.text_input(
+            f"Nome {i} — Nome do encarregado",
+            value=valores.get(f"nome_encarregado_{i}") or "",
+            key=f"{key_prefix}_nome_encarregado_{i}",
+        )
+        localidade = col_b.text_input(
+            f"Localidade {i} — Localidade",
+            value=valores.get(f"localidade_{i}") or "",
+            key=f"{key_prefix}_localidade_{i}",
+        )
         encarregados.append((nome, localidade))
 
     st.subheader("Músicos")
@@ -156,7 +221,10 @@ def tela_novo_registro():
     valores_cordas = {}
     cols = st.columns(len(CORDAS))
     for i, campo in enumerate(CORDAS):
-        valores_cordas[campo] = cols[i].number_input(LABELS[campo], min_value=0, step=1, key=campo)
+        valores_cordas[campo] = cols[i].number_input(
+            LABELS[campo], min_value=0, step=1,
+            value=int(valores.get(campo) or 0), key=f"{key_prefix}_{campo}",
+        )
     total_cordas = sum(valores_cordas.values())
     st.caption(f"Total cordas: {total_cordas}")
 
@@ -164,7 +232,10 @@ def tela_novo_registro():
     valores_madeiras = {}
     cols = st.columns(4)
     for i, campo in enumerate(MADEIRAS):
-        valores_madeiras[campo] = cols[i % 4].number_input(LABELS[campo], min_value=0, step=1, key=campo)
+        valores_madeiras[campo] = cols[i % 4].number_input(
+            LABELS[campo], min_value=0, step=1,
+            value=int(valores.get(campo) or 0), key=f"{key_prefix}_{campo}",
+        )
     total_madeiras = sum(valores_madeiras.values())
     st.caption(f"Total madeiras: {total_madeiras}")
 
@@ -172,15 +243,24 @@ def tela_novo_registro():
     valores_metais = {}
     cols = st.columns(4)
     for i, campo in enumerate(METAIS):
-        valores_metais[campo] = cols[i % 4].number_input(LABELS[campo], min_value=0, step=1, key=campo)
+        valores_metais[campo] = cols[i % 4].number_input(
+            LABELS[campo], min_value=0, step=1,
+            value=int(valores.get(campo) or 0), key=f"{key_prefix}_{campo}",
+        )
     total_metais = sum(valores_metais.values())
     st.caption(f"Total metais: {total_metais}")
 
     with st.expander("Harmônico", expanded=False):
-        acordeon = st.number_input("Harmônico (Acordeon)", min_value=0, step=1, key="acordeon")
+        acordeon = st.number_input(
+            "Harmônico (Acordeon)", min_value=0, step=1,
+            value=int(valores.get("acordeon") or 0), key=f"{key_prefix}_acordeon",
+        )
         st.caption(f"Total harmônico: {acordeon}")
 
-    organistas = st.number_input("Organistas", min_value=0, step=1, key="organistas")
+    organistas = st.number_input(
+        "Organistas", min_value=0, step=1,
+        value=int(valores.get("organistas") or 0), key=f"{key_prefix}_organistas",
+    )
 
     total_musicos = total_cordas + total_madeiras + total_metais + acordeon
 
@@ -189,14 +269,23 @@ def tela_novo_registro():
     valores_ministerio = {}
     cols = st.columns(4)
     for i, campo in enumerate(MINISTERIO):
-        valores_ministerio[campo] = cols[i % 4].number_input(LABELS[campo], min_value=0, step=1, key=campo)
+        valores_ministerio[campo] = cols[i % 4].number_input(
+            LABELS[campo], min_value=0, step=1,
+            value=int(valores.get(campo) or 0), key=f"{key_prefix}_{campo}",
+        )
     total_ministerio = sum(valores_ministerio.values())
     st.caption(f"Total Ministério: {total_ministerio}")
 
     st.subheader("Irmandade")
     col1, col2 = st.columns(2)
-    irmaos = col1.number_input("Irmãos", min_value=0, step=1, key="irmaos")
-    irmas = col2.number_input("Irmãs", min_value=0, step=1, key="irmas")
+    irmaos = col1.number_input(
+        "Irmãos", min_value=0, step=1,
+        value=int(valores.get("irmaos") or 0), key=f"{key_prefix}_irmaos",
+    )
+    irmas = col2.number_input(
+        "Irmãs", min_value=0, step=1,
+        value=int(valores.get("irmas") or 0), key=f"{key_prefix}_irmas",
+    )
     st.caption(f"Total de Irmandade: {irmaos + irmas}")
 
     st.subheader("Composição dos participantes")
@@ -204,16 +293,6 @@ def tela_novo_registro():
     pc_cordas = (total_cordas / total_musicos) if total_musicos else 0
     pc_madeiras = (total_madeiras / total_musicos) if total_musicos else 0
     pc_metais = (total_metais / total_musicos) if total_musicos else 0
-
-    def cartao_percentual(titulo, cor, valor, meta):
-        st.markdown(
-            f"""<div style="border:2px solid {cor}; border-radius:8px; padding:10px 14px; text-align:center;">
-            <div style="color:{cor}; font-weight:600;">{titulo}</div>
-            <div style="font-size:1.6rem; font-weight:700;">{valor:.0%}</div>
-            <div style="font-size:0.8rem; color:#666;">meta: {meta:.0%}</div>
-            </div>""",
-            unsafe_allow_html=True,
-        )
 
     c1, c2, c3 = st.columns(3)
     with c1:
@@ -223,9 +302,15 @@ def tela_novo_registro():
     with c3:
         cartao_percentual("Metais", CORES["Metais"], pc_metais, META_METAIS)
 
-    visitantes = st.number_input("Visitantes", min_value=0, step=1, key="visitantes")
+    visitantes = st.number_input(
+        "Visitantes", min_value=0, step=1,
+        value=int(valores.get("visitantes") or 0), key=f"{key_prefix}_visitantes",
+    )
 
-    hinos = st.text_area("Hinos ensaiados", placeholder="Ex: Hino 10 - ...\nHino 25 - ...", key="hinos")
+    hinos = st.text_area(
+        "Hinos ensaiados", placeholder="Ex: Hino 10 - ...\nHino 25 - ...",
+        value=valores.get("hinos_ensaiados") or "", key=f"{key_prefix}_hinos",
+    )
 
     st.subheader("Resumo")
     r1, r2, r3 = st.columns(3)
@@ -257,13 +342,7 @@ def tela_novo_registro():
         "hinos_ensaiados": hinos,
     }
 
-    b1, b2 = st.columns(2)
-    if b1.button("Salvar Ensaio", type="primary", use_container_width=True):
-        db.salvar_ensaio(dados, [])
-        st.success("Registro salvo com sucesso!")
-        st.rerun()
-
-    pdf_bytes = gerar_pdf({
+    contexto_pdf = {
         "data_str": data_ensaio.strftime("%d/%m/%Y"),
         "dia_semana": dia_semana,
         "tipo_ensaio": tipo_ensaio,
@@ -274,13 +353,32 @@ def tela_novo_registro():
         "irmas": irmas,
         "total_geral": total_geral,
         "hinos": hinos,
-    })
+    }
+
+    return dados, contexto_pdf
+
+
+# ---------------- Tela: Novo Registro ----------------
+
+def tela_novo_registro():
+    st.header("Novo Registro de Ensaio")
+
+    dados, contexto_pdf = formulario_ensaio("novo")
+
+    b1, b2 = st.columns(2)
+    if b1.button("Salvar Ensaio", type="primary", use_container_width=True, key="novo_salvar"):
+        db.salvar_ensaio(dados, [])
+        st.success("Registro salvo com sucesso!")
+        st.rerun()
+
+    pdf_bytes = gerar_pdf(contexto_pdf)
     b2.download_button(
         "Salvar em PDF",
         data=pdf_bytes,
-        file_name=f"ensaio_{data_ensaio.isoformat()}.pdf",
+        file_name=f"ensaio_{dados['data']}.pdf",
         mime="application/pdf",
         use_container_width=True,
+        key="novo_download_pdf",
     )
 
 
@@ -305,6 +403,7 @@ def tela_historico():
         if tipo:
             titulo += f" · {tipo}"
         titulo += f" · {total_musicos + (e.get('organistas') or 0)} presente(s) · {e.get('visitantes') or 0} visitante(s)"
+
         with st.expander(titulo):
             for i in range(1, 4):
                 nome = e.get(f"nome_encarregado_{i}")
@@ -316,6 +415,37 @@ def tela_historico():
             if e.get("hinos_ensaiados"):
                 st.write("**Hinos ensaiados:**")
                 st.text(e["hinos_ensaiados"])
+
+            st.divider()
+
+            col_pdf, col_editar = st.columns(2)
+
+            pdf_bytes = gerar_pdf(contexto_pdf_do_registro(e))
+            col_pdf.download_button(
+                "📄 Baixar em PDF",
+                data=pdf_bytes,
+                file_name=f"ensaio_{e.get('data')}.pdf",
+                mime="application/pdf",
+                use_container_width=True,
+                key=f"pdf_{e['id']}",
+            )
+
+            editando_key = f"editando_{e['id']}"
+            rotulo_editar = "✖️ Fechar edição" if st.session_state.get(editando_key) else "✏️ Editar este registro"
+            if col_editar.button(rotulo_editar, use_container_width=True, key=f"btn_editar_{e['id']}"):
+                st.session_state[editando_key] = not st.session_state.get(editando_key, False)
+                st.rerun()
+
+            if st.session_state.get(editando_key):
+                st.markdown("---")
+                st.subheader("Editando registro")
+                dados_editados, _ = formulario_ensaio(f"editar_{e['id']}", valores=e)
+
+                if st.button("💾 Salvar alterações", type="primary", key=f"salvar_edicao_{e['id']}"):
+                    db.atualizar_ensaio(e["id"], dados_editados)
+                    st.success("Registro atualizado com sucesso!")
+                    st.session_state[editando_key] = False
+                    st.rerun()
 
 
 # ---------------- Main ----------------
