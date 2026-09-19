@@ -1,4 +1,4 @@
--- Schema do banco para o app "Ensaio Local / Culto de Jovens"
+-- Schema do banco para o app "Ensaio Local"
 -- Compatível com Turso (libsql) e SQLite local
 
 -- Cadastro de músicos e organistas (usado no Relatório Mensal por pessoa)
@@ -11,18 +11,21 @@ CREATE TABLE IF NOT EXISTS musicos (
     ativo INTEGER NOT NULL DEFAULT 1
 );
 
--- Um registro por culto/ensaio
-CREATE TABLE IF NOT EXISTS cultos (
+-- Um registro por Ensaio
+CREATE TABLE IF NOT EXISTS ensaios (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     data TEXT NOT NULL,                  -- formato YYYY-MM-DD
     dia_semana TEXT,                     -- ex: 'Domingo', 'Quinta-feira'
     tipo_ensaio TEXT,                    -- 'Local' ou 'Regional'
+
+    -- Encarregados
     nome_encarregado_1 TEXT,
     localidade_1 TEXT,
     nome_encarregado_2 TEXT,
     localidade_2 TEXT,
     nome_encarregado_3 TEXT,
     localidade_3 TEXT,
+
     fora_do_padrao INTEGER NOT NULL DEFAULT 0,  -- 1 se foi criado em dia que não é o padrão
 
     -- Irmandade (sem instrumento)
@@ -81,10 +84,10 @@ CREATE TABLE IF NOT EXISTS cultos (
     criado_em TEXT NOT NULL DEFAULT (datetime('now'))
 );
 
--- Presença individual por músico/organista em cada culto (para o Relatório Mensal por nome)
+-- Presença individual por músico/organista em cada ensaio (para o Relatório Mensal por nome)
 CREATE TABLE IF NOT EXISTS presencas (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
-    culto_id INTEGER NOT NULL REFERENCES cultos(id) ON DELETE CASCADE,
+    ensaio_id INTEGER NOT NULL REFERENCES ensaios(id) ON DELETE CASCADE,
     musico_id INTEGER NOT NULL REFERENCES musicos(id) ON DELETE CASCADE,
     presente INTEGER NOT NULL DEFAULT 1
 );
